@@ -1,0 +1,25 @@
+FROM registry.gitlab.com/rust_musl_docker/image:stable-latest as builder
+WORKDIR /workdir
+COPY . .
+
+COPY debian-10-apt-source /etc/apt/sources.list
+RUN apt-get update && apt-get install -y upx
+RUN echo "[source.crates-io]" > /root/.cargo/config \
+    && echo 'registry = "https://github.com/rust-lang/crates.io-index"' >> /root/.cargo/config \
+    && echo "replace-with = 'ustc'" >> /root/.cargo/config \
+    && echo "[source.ustc]" >> /root/.cargo/config \
+    && echo 'registry = "https://mirrors.ustc.edu.cn/crates.io-index"' >> /root/.cargo/config
+
+RUN cargo build -j4 --release --target=x86_64-unknown-linux-musl
+RUN upx /workdir/target/x86_64-unknown-linux-musl/release/forward-bot
+
+ADD https://baseone-dev.pek3b.qingstor.com/static/tini-static /tini
+RUN chmod +x /tini
+
+FROM alpine
+COPY --from=builder /workdir/target/x86_64-unknown-linux-musl/release/forward-bot /app/forward-bot
+COPY --from=builder /tini /tini
+ENTRYPOINT ["/tini", "--"]
+
+WORKDIR /app
+CMD ["/app/forward-bot"]
